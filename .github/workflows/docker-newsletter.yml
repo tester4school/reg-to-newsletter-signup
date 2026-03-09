@@ -13,8 +13,8 @@ env:
   IMAGE_NAME: newsletter-signup
 
 jobs:
-  docker:
-    name: Build and push to Artifact Registry
+  docker-dev:
+    name: Build and push to Artifact Registry (Dev)
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
     permissions:
@@ -51,6 +51,50 @@ jobs:
       - name: Publish image info
         env:
           PROJECT_ID: ${{ secrets.PROJECT_ID_DEV }}
+        run: |
+          IMAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}"
+          echo "Published image tags:"
+          echo "${IMAGE_PATH}:${GITHUB_SHA}"
+          echo "${IMAGE_PATH}:latest"
+
+  docker-prod:
+    name: Build and push to Artifact Registry (Prod)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_NEWSLETTER_PROD }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build image
+        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
+
+      - name: Tag and push image
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID_PROD }}
+        run: |
+          IMAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}"
+          docker tag $IMAGE_NAME:${GITHUB_SHA} ${IMAGE_PATH}:${GITHUB_SHA}
+          docker tag $IMAGE_NAME:${GITHUB_SHA} ${IMAGE_PATH}:latest
+          docker push ${IMAGE_PATH}:${GITHUB_SHA}
+          docker push ${IMAGE_PATH}:latest
+          echo "image_path=${IMAGE_PATH}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Publish image info
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID_PROD }}
         run: |
           IMAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}"
           echo "Published image tags:"
